@@ -11,8 +11,8 @@ export function PRs({ owner, name }: { owner: string; name: string }) {
   const [prs, setPRs] = useState<PR[]>([]);
 
   const [filters, setFilters] = useQueryStates({
-    pageSize: parseAsInteger.withDefault(20),
-    search: parseAsString.withDefault(""),
+    prPageSize: parseAsInteger.withDefault(20),
+    prSearch: parseAsString.withDefault(""),
   });
 
   const handleUpdateTitle = async (prId: string, title: string) => {
@@ -32,11 +32,11 @@ export function PRs({ owner, name }: { owner: string; name: string }) {
 
     const unsubscribe = client.subscribe({
       query: "getPRs",
-      params: {
-        owner,
-        name,
-        first: filters.pageSize,
-        search: filters.search || undefined,
+      params: { 
+        owner, 
+        name, 
+        first: filters.prPageSize,
+        search: filters.prSearch || undefined,
       },
       onData: (data) => {
         setPRs(data);
@@ -44,7 +44,7 @@ export function PRs({ owner, name }: { owner: string; name: string }) {
     });
 
     return unsubscribe;
-  }, [client, owner, name, filters.pageSize, filters.search]);
+  }, [client, owner, name, filters.prPageSize, filters.prSearch]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -57,8 +57,8 @@ export function PRs({ owner, name }: { owner: string; name: string }) {
             Show:
           </label>
           <select
-            value={filters.pageSize}
-            onChange={(e) => setFilters({ pageSize: Number(e.target.value) })}
+            value={filters.prPageSize}
+            onChange={(e) => setFilters({ prPageSize: Number(e.target.value) })}
             className="px-3 py-1 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm"
           >
             <option value={10}>10</option>
@@ -73,8 +73,8 @@ export function PRs({ owner, name }: { owner: string; name: string }) {
       <input
         type="text"
         placeholder="Search pull requests..."
-        value={filters.search}
-        onChange={(e) => setFilters({ search: e.target.value })}
+        value={filters.prSearch}
+        onChange={(e) => setFilters({ prSearch: e.target.value })}
         className="w-full px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
       />
 

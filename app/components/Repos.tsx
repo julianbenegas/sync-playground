@@ -2,18 +2,26 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { parseAsStringEnum, parseAsString, parseAsInteger, useQueryStates } from "nuqs";
+import {
+  parseAsStringEnum,
+  parseAsString,
+  parseAsInteger,
+  useQueryStates,
+} from "nuqs";
 import { useSyncClient } from "./SyncProvider";
 import type { Repo } from "@/app/gh-sync";
 
 export function Repos({ owner }: { owner: string }) {
   const client = useSyncClient();
   const [repos, setRepos] = useState<Repo[]>([]);
-  
+
   const [filters, setFilters] = useQueryStates({
-    privacy: parseAsStringEnum<"PUBLIC" | "PRIVATE">(["PUBLIC", "PRIVATE"]).withDefault("PRIVATE"),
-    search: parseAsString.withDefault(""),
-    pageSize: parseAsInteger.withDefault(20),
+    privacy: parseAsStringEnum<"PUBLIC" | "PRIVATE">([
+      "PUBLIC",
+      "PRIVATE",
+    ]).withDefault("PRIVATE"),
+    repoSearch: parseAsString.withDefault(""),
+    repoPageSize: parseAsInteger.withDefault(20),
   });
 
   useEffect(() => {
@@ -23,9 +31,9 @@ export function Repos({ owner }: { owner: string }) {
       query: "getRepos",
       params: {
         owner,
-        first: filters.pageSize,
+        first: filters.repoPageSize,
         privacy: filters.privacy,
-        search: filters.search || undefined,
+        search: filters.repoSearch || undefined,
       },
       onData: (data) => {
         setRepos(data);
@@ -33,7 +41,13 @@ export function Repos({ owner }: { owner: string }) {
     });
 
     return unsubscribe;
-  }, [client, owner, filters.privacy, filters.search, filters.pageSize]);
+  }, [
+    client,
+    owner,
+    filters.privacy,
+    filters.repoSearch,
+    filters.repoPageSize,
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -76,8 +90,10 @@ export function Repos({ owner }: { owner: string }) {
             Show:
           </label>
           <select
-            value={filters.pageSize}
-            onChange={(e) => setFilters({ pageSize: Number(e.target.value) })}
+            value={filters.repoPageSize}
+            onChange={(e) =>
+              setFilters({ repoPageSize: Number(e.target.value) })
+            }
             className="px-3 py-1 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm"
           >
             <option value={10}>10</option>
@@ -92,8 +108,8 @@ export function Repos({ owner }: { owner: string }) {
       <input
         type="text"
         placeholder="Search repositories..."
-        value={filters.search}
-        onChange={(e) => setFilters({ search: e.target.value })}
+        value={filters.repoSearch}
+        onChange={(e) => setFilters({ repoSearch: e.target.value })}
         className="w-full px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
       />
 
@@ -106,14 +122,18 @@ export function Repos({ owner }: { owner: string }) {
             // Preserve current filters in the URL when navigating
             const searchParams = new URLSearchParams();
             if (filters.privacy) searchParams.set("privacy", filters.privacy);
-            if (filters.search) searchParams.set("search", filters.search);
-            if (filters.pageSize !== 20) searchParams.set("pageSize", String(filters.pageSize));
+            if (filters.repoSearch)
+              searchParams.set("repoSearch", filters.repoSearch);
+            if (filters.repoPageSize !== 20)
+              searchParams.set("repoPageSize", String(filters.repoPageSize));
             const queryString = searchParams.toString();
-            
+
             return (
               <Link
                 key={repo.id}
-                href={`/${repo.owner}/${repo.name}${queryString ? `?${queryString}` : ""}`}
+                href={`/${repo.owner}/${repo.name}${
+                  queryString ? `?${queryString}` : ""
+                }`}
                 className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors block"
               >
                 <div className="flex items-center gap-2">
