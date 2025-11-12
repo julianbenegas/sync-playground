@@ -1,27 +1,50 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useSyncClient } from "./SyncProvider";
+import { PRItem } from "./PRItem";
 import type { PR } from "@/app/gh-sync";
 
 export function PRs({ owner, name }: { owner: string; name: string }) {
   const client = useSyncClient();
   const [prs, setPRs] = useState<PR[]>([]);
-  const [pageSize, setPageSize] = useState(20);
+
+  const [filters, setFilters] = useQueryStates({
+    pageSize: parseAsInteger.withDefault(20),
+    search: parseAsString.withDefault(""),
+  });
+
+  const handleUpdateTitle = async (prId: string, title: string) => {
+    if (!client) return;
+
+    await client.mutate.updatePRTitle({
+      owner,
+      name,
+      prId,
+      title,
+    });
+    client.pull();
+  };
 
   useEffect(() => {
     if (!client) return;
 
     const unsubscribe = client.subscribe({
       query: "getPRs",
-      params: { owner, name, first: pageSize },
+      params: {
+        owner,
+        name,
+        first: filters.pageSize,
+        search: filters.search || undefined,
+      },
       onData: (data) => {
         setPRs(data);
       },
     });
 
     return unsubscribe;
-  }, [client, owner, name, pageSize]);
+  }, [client, owner, name, filters.pageSize, filters.search]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -34,8 +57,8 @@ export function PRs({ owner, name }: { owner: string; name: string }) {
             Show:
           </label>
           <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
+            value={filters.pageSize}
+            onChange={(e) => setFilters({ pageSize: Number(e.target.value) })}
             className="px-3 py-1 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm"
           >
             <option value={10}>10</option>
@@ -46,22 +69,27 @@ export function PRs({ owner, name }: { owner: string; name: string }) {
         </div>
       </div>
 
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="Search pull requests..."
+        value={filters.search}
+        onChange={(e) => setFilters({ search: e.target.value })}
+        className="w-full px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+      />
+
       {prs.length === 0 ? (
         <p className="text-zinc-500">No pull requests found</p>
       ) : (
         <div className="flex flex-col gap-2">
           {prs.map((pr) => (
-            <div
+            <PRItem
               key={pr.id}
-              className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 dark:text-zinc-400">
-                  #{pr.number}
-                </span>
-                <h3 className="font-semibold">{pr.title}</h3>
-              </div>
-            </div>
+              pr={pr}
+              owner={owner}
+              name={name}
+              onUpdateTitle={handleUpdateTitle}
+            />
           ))}
         </div>
       )}

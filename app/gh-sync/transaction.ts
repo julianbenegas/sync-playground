@@ -43,10 +43,24 @@ const initDb = async () => {
       CREATE TABLE IF NOT EXISTS client_groups (
         id TEXT PRIMARY KEY,
         cvr_version INTEGER NOT NULL DEFAULT 0,
-        last_modified TEXT NOT NULL
+        last_modified TEXT NOT NULL,
+        client_last_mutation_ids TEXT NOT NULL DEFAULT "{}"
       )
     `),
   ]);
+
+  // Migration: Add client_last_mutation_ids column if it doesn't exist
+  // This is safe - if column exists, it will fail silently
+  await dbClient
+    .execute(
+      `
+      ALTER TABLE client_groups 
+      ADD COLUMN client_last_mutation_ids TEXT NOT NULL DEFAULT "{}"
+    `
+    )
+    .catch(() => {
+      // Column already exists, ignore error
+    });
 };
 
 let initialized = false;
@@ -102,28 +116,30 @@ export const transact = async <T>(
       }));
     },
 
-    async updateClient(clientData: Client): Promise<void> {
+    async batchSetClients(clients: Client[]): Promise<void> {
+      if (clients.length === 0) {
+        return;
+      }
+
+      const values = clients.map(() => "(?, ?, ?, ?)").join(", ");
+
+      const args = clients.flatMap((client) => [
+        client.id,
+        client.clientGroupId,
+        client.lastMutationId,
+        client.lastModified.toISOString(),
+      ]);
+
       await dbTx.execute({
         sql: `
           INSERT INTO clients (id, client_group_id, last_mutation_id, last_modified)
-          VALUES (?, ?, ?, ?)
+          VALUES ${values}
           ON CONFLICT(id) DO UPDATE SET
             last_mutation_id = excluded.last_mutation_id,
             last_modified = excluded.last_modified
         `,
-        args: [
-          clientData.id,
-          clientData.clientGroupId,
-          clientData.lastMutationId,
-          clientData.lastModified.toISOString(),
-        ],
+        args,
       });
-    },
-
-    async updateClients(clients: Client[]): Promise<void> {
-      for (const clientData of clients) {
-        await tx.updateClient(clientData);
-      }
     },
 
     async getClientGroup(clientGroupId: string): Promise<ClientGroup | null> {
@@ -145,6 +161,7 @@ export const transact = async <T>(
           id: clientGroupId,
           cvrVersion: 0,
           lastModified: new Date(),
+          clientLastMutationIds: {},
         };
       }
 
@@ -153,20 +170,27 @@ export const transact = async <T>(
         id: row.id as string,
         cvrVersion: Number(row.cvr_version),
         lastModified: new Date(row.last_modified as string),
+        clientLastMutationIds: JSON.parse(
+          row.client_last_mutation_ids as string
+        ),
       };
     },
 
-    async updateClientGroup(clientGroup: ClientGroup): Promise<void> {
+    async setClientGroup(clientGroup: ClientGroup): Promise<void> {
       await dbTx.execute({
         sql: `
-          UPDATE client_groups
-          SET cvr_version = ?, last_modified = ?
-          WHERE id = ?
+          INSERT INTO client_groups (id, cvr_version, last_modified, client_last_mutation_ids)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            cvr_version = excluded.cvr_version,
+            last_modified = excluded.last_modified,
+            client_last_mutation_ids = excluded.client_last_mutation_ids
         `,
         args: [
-          clientGroup.cvrVersion,
-          new Date().toISOString(),
           clientGroup.id,
+          clientGroup.cvrVersion,
+          clientGroup.lastModified.toISOString(),
+          JSON.stringify(clientGroup.clientLastMutationIds),
         ],
       });
     },

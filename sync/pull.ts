@@ -109,14 +109,15 @@ export const pull = async <TX extends RemoteTransaction>({
   const lastMutationIDChanges: Record<ClientID, number> = {};
   for (const client of clients) {
     const curr = client.lastMutationId;
-    if (curr > (clientGroup.cvrVersion || 0)) {
+    if (curr > (clientGroup.clientLastMutationIds[client.id] || 0)) {
       lastMutationIDChanges[client.id] = curr;
+      clientGroup.clientLastMutationIds[client.id] = curr;
     }
   }
 
   if (patch.length > 0) {
     await Promise.all([
-      tx.updateClientGroup({
+      tx.setClientGroup({
         ...clientGroup,
         cvrVersion: nextCVRVersion,
       }),

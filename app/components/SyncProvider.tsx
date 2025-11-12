@@ -3,7 +3,13 @@
 import { syncClient, type SyncClient } from "@/sync/client/core";
 import { sync, type Sync } from "@/app/gh-sync";
 import type { Transaction } from "@/app/gh-sync/transaction";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  type ReactNode,
+} from "react";
 
 type SyncContextValue = SyncClient<Transaction, Sync> | null;
 
@@ -22,6 +28,17 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       sync,
     });
   });
+
+  useEffect(() => {
+    if (!client) return;
+
+    const handleFocus = () => {
+      client.pull();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [client]);
 
   return <SyncContext.Provider value={client}>{children}</SyncContext.Provider>;
 }

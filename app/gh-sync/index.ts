@@ -5,6 +5,7 @@ export type PR = {
   id: string;
   title: string;
   number: number;
+  updatedAt: string;
 };
 
 export type Repo = {
@@ -13,6 +14,7 @@ export type Repo = {
   owner: string;
   description: string | null;
   isPrivate: boolean;
+  updatedAt: string;
 };
 
 export const sync = defineSync<Transaction>()({
@@ -51,34 +53,52 @@ export const sync = defineSync<Transaction>()({
 
           repos.push(repo);
         }
+
+        // Sort by updatedAt (most recent first)
+        repos.sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+
         return repos;
       },
       remote: async (tx, params) => {
         console.time("gql query get repos");
+
+        // Use GitHub's search API for everything
+        const privacyFilter =
+          params.privacy === "PUBLIC" ? " is:public" : " is:private";
+        const searchTerm = params.search
+          ? ` ${params.search} in:name,description`
+          : "";
+        const searchQuery = `user:${params.owner}${searchTerm}${privacyFilter} sort:updated-desc`;
+
         const result = await tx.gqlQuery<{
-          user: {
-            repositories: {
-              nodes: Array<{
-                id: string;
-                name: string;
-                description: string | null;
-                updatedAt: string;
-                isPrivate: boolean;
-                owner: {
-                  login: string;
-                };
-              } | null>;
-            };
-          } | null;
+          search: {
+            nodes: Array<{
+              __typename: string;
+              id: string;
+              name: string;
+              description: string | null;
+              createdAt: string;
+              updatedAt: string;
+              isPrivate: boolean;
+              owner: {
+                login: string;
+              };
+            } | null>;
+          };
         }>({
           query: `
-            query GetRepos($owner: String!, $first: Int!, $privacy: RepositoryPrivacy) {
-              user(login: $owner) {
-                repositories(first: $first, privacy: $privacy, orderBy: { field: UPDATED_AT, direction: DESC }) {
-                  nodes {
+            query SearchRepos($query: String!, $first: Int!) {
+              search(query: $query, type: REPOSITORY, first: $first) {
+                nodes {
+                  ... on Repository {
+                    __typename
                     id
                     name
                     description
+                    createdAt
                     updatedAt
                     isPrivate
                     owner {
@@ -90,12 +110,10 @@ export const sync = defineSync<Transaction>()({
             }
           `,
           variables: {
-            owner: params.owner,
+            query: searchQuery,
             first: params.first,
-            privacy: params.privacy,
           },
         });
-        console.timeEnd("gql query get repos");
 
         const entries: Array<{
           key: string;
@@ -104,68 +122,87 @@ export const sync = defineSync<Transaction>()({
           deleted: boolean;
         }> = [];
 
-        for (const repo of result.user?.repositories.nodes ?? []) {
-          if (!repo) continue;
-
-          // Apply client-side search filter if provided
-          if (
-            params.search &&
-            !repo.name.toLowerCase().includes(params.search.toLowerCase()) &&
-            !repo.description
-              ?.toLowerCase()
-              .includes(params.search.toLowerCase())
-          ) {
-            continue;
-          }
+        for (const node of result.search?.nodes ?? []) {
+          if (!node || node.__typename !== "Repository") continue;
 
           entries.push({
-            key: `repo/${params.owner}/${repo.id}`,
-            version: new Date(repo.updatedAt).getTime(),
+            key: `repo/${params.owner}/${node.id}`,
+            version: new Date(node.updatedAt).getTime(),
             value: {
-              id: repo.id,
-              name: repo.name,
-              owner: repo.owner.login,
-              description: repo.description,
-              isPrivate: repo.isPrivate,
+              id: node.id,
+              name: node.name,
+              owner: node.owner.login,
+              description: node.description,
+              isPrivate: node.isPrivate,
+              updatedAt: node.updatedAt,
             },
             deleted: false,
           });
         }
 
+        console.timeEnd("gql query get repos");
         return entries;
       },
     }),
-    getPRs: q<{ owner: string; name: string; first: number }, PR>({
+    getPRs: q<
+      { owner: string; name: string; first: number; search?: string },
+      PR
+    >({
       local: async (tx, params) => {
         const prs: PR[] = [];
         for await (const value of tx
           .scan({ prefix: `pr/${params.owner}/${params.name}/` })
           .values()) {
-          prs.push(value as unknown as PR);
+          const pr = value as unknown as PR;
+
+          // Apply search filter
+          if (
+            params.search &&
+            !pr.title.toLowerCase().includes(params.search.toLowerCase())
+          ) {
+            continue;
+          }
+
+          prs.push(pr);
         }
+
+        // Sort by updatedAt (most recent first)
+        prs.sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+
         return prs;
       },
       remote: async (tx, params) => {
+        console.time("gql query get prs");
+
+        // Use GitHub's search API for everything
+        const searchTerm = params.search ? ` ${params.search} in:title` : "";
+        const searchQuery = `repo:${params.owner}/${params.name} type:pr${searchTerm} sort:updated-desc`;
+
         const result = await tx.gqlQuery<{
-          repository: {
-            pullRequests: {
-              nodes: Array<{
-                id: string;
-                title: string;
-                number: number;
-                updatedAt: string;
-              } | null>;
-            };
-          } | null;
+          search: {
+            nodes: Array<{
+              __typename: string;
+              id: string;
+              title: string;
+              number: number;
+              createdAt: string;
+              updatedAt: string;
+            } | null>;
+          };
         }>({
           query: `
-            query GetPRs($owner: String!, $name: String!, $first: Int!) {
-              repository(owner: $owner, name: $name) {
-                pullRequests(first: $first, orderBy: { field: UPDATED_AT, direction: DESC }) {
-                  nodes {
+            query SearchPRs($query: String!, $first: Int!) {
+              search(query: $query, type: ISSUE, first: $first) {
+                nodes {
+                  ... on PullRequest {
+                    __typename
                     id
                     title
                     number
+                    createdAt
                     updatedAt
                   }
                 }
@@ -173,8 +210,7 @@ export const sync = defineSync<Transaction>()({
             }
           `,
           variables: {
-            owner: params.owner,
-            name: params.name,
+            query: searchQuery,
             first: params.first,
           },
         });
@@ -186,21 +222,71 @@ export const sync = defineSync<Transaction>()({
           deleted: boolean;
         }> = [];
 
-        for (const pr of result.repository?.pullRequests.nodes ?? []) {
-          if (!pr) continue;
+        for (const node of result.search?.nodes ?? []) {
+          if (!node || node.__typename !== "PullRequest") continue;
+
           entries.push({
-            key: `pr/${params.owner}/${params.name}/${pr.id}`,
-            version: new Date(pr.updatedAt).getTime(),
-            value: pr,
+            key: `pr/${params.owner}/${params.name}/${node.id}`,
+            version: new Date(node.updatedAt).getTime(),
+            value: {
+              id: node.id,
+              title: node.title,
+              number: node.number,
+              updatedAt: node.updatedAt,
+            },
             deleted: false,
           });
         }
 
+        console.timeEnd("gql query get prs");
         return entries;
       },
     }),
   }),
-  mutations: () => ({}),
+  mutations: (m) => ({
+    updatePRTitle: m<
+      {
+        owner: string;
+        name: string;
+        prId: string;
+        title: string;
+      },
+      { ok: boolean }
+    >({
+      local: async (tx, params) => {
+        const key = `pr/${params.owner}/${params.name}/${params.prId}`;
+        const existing = await tx.get(key);
+        if (!existing) return { ok: false };
+
+        const pr = existing as unknown as PR;
+        await tx.set(key, {
+          ...pr,
+          title: params.title,
+        });
+        return { ok: true };
+      },
+      remote: async (tx, params) => {
+        // Update PR title via GitHub API
+        await tx.gqlQuery({
+          query: `
+            mutation UpdatePullRequest($prId: ID!, $title: String!) {
+              updatePullRequest(input: { pullRequestId: $prId, title: $title }) {
+                pullRequest {
+                  id
+                  title
+                }
+              }
+            }
+          `,
+          variables: {
+            prId: params.prId,
+            title: params.title,
+          },
+        });
+        return { ok: true };
+      },
+    }),
+  }),
 });
 
 export type Sync = typeof sync;

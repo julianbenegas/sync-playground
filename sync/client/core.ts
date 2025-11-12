@@ -2,6 +2,7 @@
 import {
   dropAllDatabases,
   dropDatabase,
+  MutatorDefs,
   type PullResponseV1,
   Replicache,
 } from "replicache";
@@ -30,7 +31,7 @@ export const syncClient = <
 
   const replicache = new Replicache({
     name,
-    mutators: sync.mutations,
+    mutators: getReplicacheMutators(sync),
     puller: async (requestBody) => {
       try {
         const raw = await fetch(pullURL, {
@@ -77,6 +78,8 @@ export const syncClient = <
           `replicache push version was expected to be 1, found ${requestBody.pushVersion}`
         );
       }
+
+      console.log("requestBody", requestBody);
 
       const batches =
         maxPayloadSize !== false
@@ -166,13 +169,27 @@ export const syncClient = <
   });
 
   type QueryNames = keyof Queries;
+  type MutationNames = keyof Mutations;
+
+  const mutate = {} as {
+    [K in MutationNames]: (
+      args: Parameters<Mutations[K]["local"]>[1]
+    ) => Promise<Awaited<ReturnType<Mutations[K]["local"]>>>;
+  };
+
+  for (const mutationName of Object.keys(sync.mutations)) {
+    mutate[mutationName as MutationNames] = async (args: any) => {
+      return (await replicache.mutate[mutationName](args)) as any;
+    };
+  }
 
   const client = {
     reset: async () => {
       await dropDatabase(replicache.idbName);
       window.location.reload();
     },
-    mutate: replicache.mutate,
+    pull: () => replicache.pull(),
+    mutate,
     pendingMutations: replicache.experimentalPendingMutations,
     subscribe: <QName extends QueryNames>(args: {
       query: QName;
@@ -225,3 +242,11 @@ export type SyncClient<
   TX extends RemoteTransaction,
   S extends Sync<TX, any, any>
 > = ReturnType<typeof syncClient<TX, S["queries"], S["mutations"]>>;
+
+function getReplicacheMutators(sync: Sync<any, any, any>) {
+  const mutators: MutatorDefs = {};
+  for (const [key, mutation] of Object.entries(sync.mutations)) {
+    mutators[key] = (mutation as any).local;
+  }
+  return mutators;
+}

@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type {
+  ClientGroupID,
+  ClientID,
   ReadonlyJSONValue,
   ReadTransaction,
   WriteTransaction,
@@ -13,11 +15,10 @@ import type {
 export interface RemoteTransaction {
   getClient(clientId: string): Promise<Client | null>;
   getClients(clientIds: string[]): Promise<Client[]>;
-  updateClient(client: Client): Promise<void>;
-  updateClients(clients: Client[]): Promise<void>;
+  batchSetClients(clients: Client[]): Promise<void>;
 
   getClientGroup(clientGroupId: string): Promise<ClientGroup | null>;
-  updateClientGroup(clientGroup: ClientGroup): Promise<void>;
+  setClientGroup(clientGroup: ClientGroup): Promise<void>;
   getClientsInClientGroup(clientGroupId: string): Promise<Client[]>;
 
   batchGetCVR(clientGroupId: string, keys: string[]): Promise<CVR[]>;
@@ -25,16 +26,17 @@ export interface RemoteTransaction {
 }
 
 export type Client = {
-  id: string;
+  id: ClientID;
   clientGroupId: string;
   lastMutationId: number;
   lastModified: Date;
 };
 
 export type ClientGroup = {
-  id: string;
+  id: ClientGroupID;
   cvrVersion: number;
   lastModified: Date;
+  clientLastMutationIds: Record<ClientID, number>;
 };
 
 export type CVR = {
@@ -63,9 +65,9 @@ type QueryDef<TX extends RemoteTransaction, Params, Item> = {
 /**
  * Mutation definition - both local and remote implementations
  */
-type MutationDef<TX extends RemoteTransaction, Params> = {
-  local: (tx: WriteTransaction, params: Params) => Promise<void>;
-  remote: (tx: TX, params: NoInfer<Params>) => Promise<void>;
+type MutationDef<TX extends RemoteTransaction, Params, Result> = {
+  local: (tx: WriteTransaction, params: Params) => Promise<Result>;
+  remote: (tx: TX, params: NoInfer<Params>) => Promise<Result>;
 };
 
 /**
@@ -83,9 +85,12 @@ type QueryBuilder<TX extends RemoteTransaction> = <
  * Mutation builder - helps capture types for a single mutation
  * Usage: m<Params>({ local, remote })
  */
-type MutationBuilder<TX extends RemoteTransaction> = <Params = unknown>(
-  def: MutationDef<TX, Params>
-) => MutationDef<TX, Params>;
+type MutationBuilder<TX extends RemoteTransaction> = <
+  Params = unknown,
+  Result = unknown
+>(
+  def: MutationDef<TX, Params, Result>
+) => MutationDef<TX, Params, Result>;
 
 /**
  * The sync definition returned by defineSync
@@ -93,7 +98,7 @@ type MutationBuilder<TX extends RemoteTransaction> = <Params = unknown>(
 export type Sync<
   TX extends RemoteTransaction,
   Queries extends Record<string, QueryDef<TX, any, any>>,
-  Mutations extends Record<string, MutationDef<TX, any>>
+  Mutations extends Record<string, MutationDef<TX, any, any>>
 > = {
   schemaVersion: number;
   cvrStrategy: "auto" | "manual";
@@ -145,7 +150,7 @@ export type Sync<
 export function defineSync<TX extends RemoteTransaction>() {
   return <
     Queries extends Record<string, QueryDef<TX, any, any>>,
-    Mutations extends Record<string, MutationDef<TX, any>>
+    Mutations extends Record<string, MutationDef<TX, any, any>>
   >(config: {
     schemaVersion: number;
     cvrStrategy?: "auto" | "manual";
