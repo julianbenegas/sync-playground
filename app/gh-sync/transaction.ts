@@ -48,19 +48,6 @@ const initDb = async () => {
       )
     `),
   ]);
-
-  // Migration: Add client_last_mutation_ids column if it doesn't exist
-  // This is safe - if column exists, it will fail silently
-  await dbClient
-    .execute(
-      `
-      ALTER TABLE client_groups 
-      ADD COLUMN client_last_mutation_ids TEXT NOT NULL DEFAULT "{}"
-    `
-    )
-    .catch(() => {
-      // Column already exists, ignore error
-    });
 };
 
 let initialized = false;
