@@ -52,6 +52,9 @@ export function Repos({ owner }: { owner: string }) {
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-2xl font-semibold">Repositories for @{owner}</h2>
+      <p className="text-sm text-zinc-500">
+        Note: not all private repositories are available for this GITHUB_TOKEN
+      </p>
 
       {/* Filters */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

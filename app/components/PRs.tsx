@@ -32,9 +32,9 @@ export function PRs({ owner, name }: { owner: string; name: string }) {
 
     const unsubscribe = client.subscribe({
       query: "getPRs",
-      params: { 
-        owner, 
-        name, 
+      params: {
+        owner,
+        name,
         first: filters.prPageSize,
         search: filters.prSearch || undefined,
       },
