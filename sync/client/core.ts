@@ -168,6 +168,10 @@ export const syncClient = <
   type QueryNames = keyof Queries;
 
   const client = {
+    reset: async () => {
+      await dropDatabase(replicache.idbName);
+      window.location.reload();
+    },
     mutate: replicache.mutate,
     pendingMutations: replicache.experimentalPendingMutations,
     subscribe: <QName extends QueryNames>(args: {

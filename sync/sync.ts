@@ -20,7 +20,7 @@ export interface RemoteTransaction {
   updateClientGroup(clientGroup: ClientGroup): Promise<void>;
   getClientsInClientGroup(clientGroupId: string): Promise<Client[]>;
 
-  getAllCVRs(clientGroupId: string): Promise<CVR[]>;
+  batchGetCVR(clientGroupId: string, keys: string[]): Promise<CVR[]>;
   batchSetCVR(clientGroupId: string, entries: CVR[]): Promise<void>;
 }
 

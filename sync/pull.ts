@@ -65,19 +65,27 @@ export const pull = async <TX extends RemoteTransaction>({
 
   const newCVRs: CVR[] = [];
   const nextCVRVersion = Math.max(clientCVRVersion, clientGroup.cvrVersion) + 1;
+
   if (sync.cvrStrategy === "auto") {
-    const allCVRs = await tx.getAllCVRs(body.clientGroupID);
-    const cvrMap = new Map(allCVRs.map((cvr) => [cvr.key, cvr]));
+    const allResultingKeys = allResultingEntries.map((e) => e.key);
+    const existingCVRs = await tx.batchGetCVR(
+      body.clientGroupID,
+      allResultingKeys
+    );
+    const cvrMap = new Map(existingCVRs.map((cvr) => [cvr.key, cvr]));
 
     for (const entry of allResultingEntries) {
       const cvr = cvrMap.get(entry.key);
-      if (
-        cvr &&
-        cvr.version >= entry.version &&
-        cvr.syncSequence <= clientCVRVersion
-      ) {
+
+      const shouldSend =
+        !cvr ||
+        cvr.version < entry.version ||
+        cvr.syncSequence > clientCVRVersion;
+
+      if (!shouldSend) {
         continue;
       }
+
       addToPatch(patch, entry);
       newCVRs.push({
         key: entry.key,
@@ -85,25 +93,6 @@ export const pull = async <TX extends RemoteTransaction>({
         version: entry.version,
         syncSequence: nextCVRVersion,
       });
-    }
-
-    for (const cvr of allCVRs) {
-      if (!touchedKeys.has(cvr.key) && cvr.syncSequence <= clientCVRVersion) {
-        const deletedEntry: Entry = {
-          key: cvr.key,
-          version: Date.now(),
-          deleted: true,
-          value: null,
-        };
-        allResultingEntries.push(deletedEntry);
-        addToPatch(patch, deletedEntry);
-        newCVRs.push({
-          key: cvr.key,
-          clientGroupId: body.clientGroupID,
-          version: Date.now(),
-          syncSequence: nextCVRVersion,
-        });
-      }
     }
   } else {
     for (const entry of allResultingEntries) {
