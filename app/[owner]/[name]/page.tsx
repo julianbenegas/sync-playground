@@ -3,6 +3,8 @@ import { SyncProvider } from "@/app/components/SyncProvider";
 import { PRs } from "@/app/components/PRs";
 import { ResetButton } from "@/app/components/ResetButton";
 
+export const dynamic = "force-static";
+
 export default async function RepoPage({
   params,
 }: {
